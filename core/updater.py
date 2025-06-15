@@ -1,5 +1,5 @@
 """
-自動更新系統
+自動更新系統 - 修復版本比較問題
 """
 import json
 import os
@@ -28,48 +28,110 @@ class AutoUpdater:
     def check_for_updates(self) -> Tuple[bool, Optional[Dict]]:
         """檢查是否有更新"""
         try:
+            print(f"🔍 正在檢查更新 - 倉庫: {self.github_repo}")
+            
             # 獲取最新 release
             response = requests.get(f"{self.api_base}/releases/latest", timeout=10)
             if response.status_code != 200:
+                print(f"❌ API 請求失敗: {response.status_code}")
                 return False, None
             
             latest_release = response.json()
-            latest_version = latest_release["tag_name"].lstrip("v")
+            latest_version_raw = latest_release["tag_name"]
+            latest_version = latest_version_raw.lstrip("v")  # 移除 v 前綴
             current_version = self.get_current_version()["version"]
             
-            # 比較版本號
-            if self._compare_versions(latest_version, current_version) > 0:
+            print(f"📊 版本比較:")
+            print(f"   GitHub 原始標籤: {latest_version_raw}")
+            print(f"   GitHub 處理後: {latest_version}")
+            print(f"   本地當前版本: {current_version}")
+            
+            # 比較版本號 - 修復邏輯
+            comparison = self._compare_versions(latest_version, current_version)
+            print(f"   比較結果: {latest_version} vs {current_version} = {comparison}")
+            
+            if comparison > 0:
+                print("✨ 發現新版本!")
                 return True, {
                     "version": latest_version,
                     "download_url": latest_release["zipball_url"],
                     "release_notes": latest_release["body"],
                     "published_at": latest_release["published_at"]
                 }
-            
-            return False, None
+            else:
+                print("✅ 已是最新版本")
+                return False, None
             
         except Exception as e:
-            print(f"檢查更新失敗: {e}")
+            print(f"❌ 檢查更新失敗: {e}")
             return False, None
     
     def _compare_versions(self, v1: str, v2: str) -> int:
-        """比較版本號"""
+        """
+        比較版本號 - 修復後的版本
+        
+        Args:
+            v1: 版本1 (latest_version)
+            v2: 版本2 (current_version)
+            
+        Returns:
+            1 if v1 > v2 (有新版本)
+            0 if v1 == v2 (版本相同)
+            -1 if v1 < v2 (本地版本較新)
+        """
         def normalize(v):
-            return [int(x) for x in v.split(".")]
+            """標準化版本號"""
+            # 移除可能的前後空白和 v 前綴
+            v = str(v).strip().lstrip('v')
+            
+            # 分割版本號並轉換為整數
+            try:
+                parts = []
+                for part in v.split("."):
+                    # 只取數字部分，忽略可能的後綴 (如 1.2.3-beta)
+                    import re
+                    number_part = re.match(r'(\d+)', part)
+                    if number_part:
+                        parts.append(int(number_part.group(1)))
+                    else:
+                        parts.append(0)
+                return parts
+            except Exception as e:
+                print(f"⚠️ 版本號解析失敗: {v} - {e}")
+                return [0, 0, 0]
         
-        norm_v1 = normalize(v1)
-        norm_v2 = normalize(v2)
-        
-        # 補齊長度
-        max_len = max(len(norm_v1), len(norm_v2))
-        norm_v1.extend([0] * (max_len - len(norm_v1)))
-        norm_v2.extend([0] * (max_len - len(norm_v2)))
-        
-        if norm_v1 > norm_v2:
-            return 1
-        elif norm_v1 < norm_v2:
-            return -1
-        else:
+        try:
+            norm_v1 = normalize(v1)
+            norm_v2 = normalize(v2)
+            
+            print(f"   標準化版本: {v1} -> {norm_v1}")
+            print(f"   標準化版本: {v2} -> {norm_v2}")
+            
+            # 補齊長度到相同
+            max_len = max(len(norm_v1), len(norm_v2))
+            norm_v1.extend([0] * (max_len - len(norm_v1)))
+            norm_v2.extend([0] * (max_len - len(norm_v2)))
+            
+            print(f"   補齊後: {norm_v1} vs {norm_v2}")
+            
+            # 逐個比較版本號部分
+            for i in range(max_len):
+                if norm_v1[i] > norm_v2[i]:
+                    print(f"   結果: {v1} > {v2}")
+                    return 1
+                elif norm_v1[i] < norm_v2[i]:
+                    print(f"   結果: {v1} < {v2}")
+                    return -1
+            
+            print(f"   結果: {v1} == {v2}")
+            return 0
+            
+        except Exception as e:
+            print(f"❌ 版本比較錯誤: {e}")
+            # 備用字符串比較
+            if str(v1) != str(v2):
+                print(f"   使用字符串比較: {v1} != {v2}")
+                return 1 if str(v1) > str(v2) else -1
             return 0
     
     def download_update(self, download_url: str) -> Optional[Path]:
@@ -91,7 +153,7 @@ class AutoUpdater:
             return temp_file
             
         except Exception as e:
-            print(f"下載失敗: {e}")
+            print(f"❌ 下載失敗: {e}")
             return None
     
     def apply_update(self, update_file: Path) -> bool:
@@ -153,7 +215,7 @@ class AutoUpdater:
             return True
             
         except Exception as e:
-            print(f"套用更新失敗: {e}")
+            print(f"❌ 套用更新失敗: {e}")
             return False
     
     def auto_update(self) -> bool:
