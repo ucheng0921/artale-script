@@ -1,5 +1,5 @@
 """
-自動更新系統 - 修復版本比較問題
+自動更新系統 - 帶完整調試功能
 """
 import json
 import os
@@ -11,11 +11,16 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 class AutoUpdater:
-    def __init__(self, github_repo: str = "yourusername/artale-script"):
+    def __init__(self, github_repo: str = "ucheng0921/artale-script"):
         self.github_repo = github_repo
         self.api_base = f"https://api.github.com/repos/{github_repo}"
         self.base_dir = Path(__file__).parent.parent
         self.version_file = self.base_dir / "version.json"
+        
+        # 添加調試信息
+        print(f"🔧 更新器初始化:")
+        print(f"   倉庫: {self.github_repo}")
+        print(f"   API 基礎URL: {self.api_base}")
         
     def get_current_version(self) -> Dict:
         """獲取當前版本資訊"""
@@ -26,29 +31,72 @@ class AutoUpdater:
             return {"version": "1.0.0"}
     
     def check_for_updates(self) -> Tuple[bool, Optional[Dict]]:
-        """檢查是否有更新"""
+        """檢查是否有更新 - 支援 Tags 備用方案"""
         try:
-            print(f"🔍 正在檢查更新 - 倉庫: {self.github_repo}")
+            print(f"🔍 正在檢查更新...")
+            print(f"   倉庫: {self.github_repo}")
             
-            # 獲取最新 release
-            response = requests.get(f"{self.api_base}/releases/latest", timeout=10)
-            if response.status_code != 200:
-                print(f"❌ API 請求失敗: {response.status_code}")
+            headers = {
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'Artale-Script-Updater/1.0'
+            }
+            
+            # 首先嘗試 releases/latest
+            latest_url = f"{self.api_base}/releases/latest"
+            print(f"   嘗試 releases API: {latest_url}")
+            
+            response = requests.get(latest_url, headers=headers, timeout=10)
+            print(f"   Releases API 狀態: {response.status_code}")
+            
+            if response.status_code == 404:
+                print("   ⚠️ 沒有 releases，嘗試使用 tags...")
+                
+                # 備用方案：使用 tags
+                tags_url = f"{self.api_base}/tags"
+                print(f"   嘗試 tags API: {tags_url}")
+                
+                tags_response = requests.get(tags_url, headers=headers, timeout=10)
+                print(f"   Tags API 狀態: {tags_response.status_code}")
+                
+                if tags_response.status_code == 200:
+                    tags_data = tags_response.json()
+                    
+                    if not tags_data:
+                        print("   ❌ 沒有找到任何 tags")
+                        return False, None
+                    
+                    # 取得最新的 tag
+                    latest_tag = tags_data[0]
+                    print(f"   ✅ 找到最新 tag: {latest_tag['name']}")
+                    
+                    # 構建類似 release 的數據結構
+                    latest_release = {
+                        "tag_name": latest_tag['name'],
+                        "zipball_url": f"https://github.com/{self.github_repo}/archive/{latest_tag['name']}.zip",
+                        "body": f"Release {latest_tag['name']}",
+                        "published_at": "unknown"
+                    }
+                else:
+                    print(f"   ❌ Tags API 也失敗: {tags_response.status_code}")
+                    return False, None
+                    
+            elif response.status_code != 200:
+                print(f"   ❌ API 請求失敗: {response.status_code}")
                 return False, None
+            else:
+                latest_release = response.json()
+                print(f"   ✅ 找到 release: {latest_release['tag_name']}")
             
-            latest_release = response.json()
+            # 處理版本比較（其餘邏輯保持不變）
             latest_version_raw = latest_release["tag_name"]
-            latest_version = latest_version_raw.lstrip("v")  # 移除 v 前綴
+            latest_version = latest_version_raw.lstrip("v")
             current_version = self.get_current_version()["version"]
             
             print(f"📊 版本比較:")
-            print(f"   GitHub 原始標籤: {latest_version_raw}")
-            print(f"   GitHub 處理後: {latest_version}")
-            print(f"   本地當前版本: {current_version}")
+            print(f"   GitHub 版本: {latest_version}")
+            print(f"   本地版本: {current_version}")
             
-            # 比較版本號 - 修復邏輯
             comparison = self._compare_versions(latest_version, current_version)
-            print(f"   比較結果: {latest_version} vs {current_version} = {comparison}")
             
             if comparison > 0:
                 print("✨ 發現新版本!")
@@ -61,34 +109,85 @@ class AutoUpdater:
             else:
                 print("✅ 已是最新版本")
                 return False, None
-            
+                
         except Exception as e:
             print(f"❌ 檢查更新失敗: {e}")
             return False, None
     
-    def _compare_versions(self, v1: str, v2: str) -> int:
-        """
-        比較版本號 - 修復後的版本
+    def check_github_status(self):
+        """檢查GitHub倉庫狀態的獨立方法"""
+        print(f"🔍 檢查GitHub倉庫狀態: {self.github_repo}")
         
-        Args:
-            v1: 版本1 (latest_version)
-            v2: 版本2 (current_version)
+        headers = {
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Artale-Script-Updater/1.0'
+        }
+        
+        # 1. 檢查倉庫
+        try:
+            repo_url = f"{self.api_base}"
+            print(f"1. 檢查倉庫: {repo_url}")
+            repo_response = requests.get(repo_url, headers=headers, timeout=10)
+            print(f"   狀態碼: {repo_response.status_code}")
             
-        Returns:
-            1 if v1 > v2 (有新版本)
-            0 if v1 == v2 (版本相同)
-            -1 if v1 < v2 (本地版本較新)
-        """
+            if repo_response.status_code == 200:
+                repo_data = repo_response.json()
+                print(f"   ✅ 倉庫存在")
+                print(f"   名稱: {repo_data['full_name']}")
+                print(f"   私有: {repo_data['private']}")
+                print(f"   描述: {repo_data['description'] or '無描述'}")
+            else:
+                print(f"   ❌ 倉庫不可訪問: {repo_response.status_code}")
+                return
+        except Exception as e:
+            print(f"   ❌ 倉庫檢查失敗: {e}")
+            return
+        
+        # 2. 檢查releases
+        try:
+            releases_url = f"{self.api_base}/releases"
+            print(f"2. 檢查releases: {releases_url}")
+            releases_response = requests.get(releases_url, headers=headers, timeout=10)
+            print(f"   狀態碼: {releases_response.status_code}")
+            
+            if releases_response.status_code == 200:
+                releases_data = releases_response.json()
+                print(f"   ✅ 找到 {len(releases_data)} 個releases")
+                
+                for i, release in enumerate(releases_data[:3]):
+                    print(f"   Release {i+1}: {release['tag_name']} ({release['published_at'][:10]})")
+            else:
+                print(f"   ❌ Releases檢查失敗: {releases_response.status_code}")
+        except Exception as e:
+            print(f"   ❌ Releases檢查失敗: {e}")
+        
+        # 3. 檢查tags (作為備選)
+        try:
+            tags_url = f"{self.api_base}/tags"
+            print(f"3. 檢查tags: {tags_url}")
+            tags_response = requests.get(tags_url, headers=headers, timeout=10)
+            print(f"   狀態碼: {tags_response.status_code}")
+            
+            if tags_response.status_code == 200:
+                tags_data = tags_response.json()
+                print(f"   ✅ 找到 {len(tags_data)} 個tags")
+                
+                for i, tag in enumerate(tags_data[:3]):
+                    print(f"   Tag {i+1}: {tag['name']}")
+            else:
+                print(f"   ❌ Tags檢查失敗: {tags_response.status_code}")
+        except Exception as e:
+            print(f"   ❌ Tags檢查失敗: {e}")
+    
+    def _compare_versions(self, v1: str, v2: str) -> int:
+        """比較版本號"""
         def normalize(v):
             """標準化版本號"""
-            # 移除可能的前後空白和 v 前綴
             v = str(v).strip().lstrip('v')
             
-            # 分割版本號並轉換為整數
             try:
                 parts = []
                 for part in v.split("."):
-                    # 只取數字部分，忽略可能的後綴 (如 1.2.3-beta)
                     import re
                     number_part = re.match(r'(\d+)', part)
                     if number_part:
@@ -107,14 +206,10 @@ class AutoUpdater:
             print(f"   標準化版本: {v1} -> {norm_v1}")
             print(f"   標準化版本: {v2} -> {norm_v2}")
             
-            # 補齊長度到相同
             max_len = max(len(norm_v1), len(norm_v2))
             norm_v1.extend([0] * (max_len - len(norm_v1)))
             norm_v2.extend([0] * (max_len - len(norm_v2)))
             
-            print(f"   補齊後: {norm_v1} vs {norm_v2}")
-            
-            # 逐個比較版本號部分
             for i in range(max_len):
                 if norm_v1[i] > norm_v2[i]:
                     print(f"   結果: {v1} > {v2}")
@@ -128,10 +223,6 @@ class AutoUpdater:
             
         except Exception as e:
             print(f"❌ 版本比較錯誤: {e}")
-            # 備用字符串比較
-            if str(v1) != str(v2):
-                print(f"   使用字符串比較: {v1} != {v2}")
-                return 1 if str(v1) > str(v2) else -1
             return 0
     
     def download_update(self, download_url: str) -> Optional[Path]:
@@ -142,7 +233,6 @@ class AutoUpdater:
             response = requests.get(download_url, stream=True, timeout=30)
             response.raise_for_status()
             
-            # 建立暫存檔案
             temp_file = Path(tempfile.gettempdir()) / "artale_update.zip"
             
             with open(temp_file, 'wb') as f:
@@ -161,11 +251,9 @@ class AutoUpdater:
         try:
             print("🔄 正在套用更新...")
             
-            # 建立備份
             backup_dir = self.base_dir.parent / f"backup_{self.get_current_version()['version']}"
             backup_dir.mkdir(exist_ok=True)
             
-            # 備份重要檔案
             important_files = [".env", "config.py"]
             for file_name in important_files:
                 file_path = self.base_dir / file_name
@@ -173,9 +261,7 @@ class AutoUpdater:
                     import shutil
                     shutil.copy2(file_path, backup_dir / file_name)
             
-            # 解壓更新檔案
             with zipfile.ZipFile(update_file, 'r') as zip_ref:
-                # 取得解壓後的資料夾名稱
                 extract_dir = Path(tempfile.gettempdir()) / "artale_update_extracted"
                 if extract_dir.exists():
                     import shutil
@@ -183,14 +269,11 @@ class AutoUpdater:
                 
                 zip_ref.extractall(extract_dir)
                 
-                # 找到實際的程式碼資料夾
                 code_dirs = [d for d in extract_dir.iterdir() if d.is_dir()]
                 if not code_dirs:
                     raise Exception("無法找到程式碼資料夾")
                 
                 source_dir = code_dirs[0]
-                
-                # 複製檔案 (排除某些檔案)
                 exclude_files = {".env", "assets", "ArtaleScriptFiles"}
                 
                 import shutil
@@ -204,7 +287,6 @@ class AutoUpdater:
                         else:
                             shutil.copy2(item, dest_path)
             
-            # 恢復重要檔案
             for file_name in important_files:
                 backup_file = backup_dir / file_name
                 if backup_file.exists():
@@ -231,15 +313,12 @@ class AutoUpdater:
         print(f"🆕 發現新版本: {update_info['version']}")
         print(f"發布說明: {update_info['release_notes']}")
         
-        # 下載更新
         update_file = self.download_update(update_info['download_url'])
         if not update_file:
             return False
         
-        # 套用更新
         success = self.apply_update(update_file)
         
-        # 清理暫存檔案
         try:
             update_file.unlink()
         except:
