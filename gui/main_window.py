@@ -1030,7 +1030,7 @@ class MainWindow:
         """檢查更新"""
         try:
             from core.updater import AutoUpdater
-            updater = AutoUpdater("yourusername/artale-script")  # 替換成你的 repo
+            updater = AutoUpdater("ucheng0921/artale-script")  # 替換成你的 repo
             
             has_update, update_info = updater.check_for_updates()
             

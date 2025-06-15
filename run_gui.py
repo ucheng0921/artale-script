@@ -17,30 +17,23 @@ def main():
         if not check_environment():
             return
         
-        # 檢查更新 (改為更友好的提示)
+        # 檢查更新 (可選)
         check_updates = input("是否檢查更新? (Y/n): ").strip().lower()
         if check_updates in ('', 'y', 'yes'):
             try:
                 from core.updater import AutoUpdater
-                
-                print("🔍 正在檢查更新...")
-                updater = AutoUpdater()  # 使用預設 repo
+                updater = AutoUpdater("ucheng0921/artale-script")
                 has_update, update_info = updater.check_for_updates()
                 
                 if has_update:
                     print(f"🆕 發現新版本: {update_info['version']}")
-                    print(f"📝 更新說明: {update_info.get('release_notes', '無')}")
                     update_now = input("是否立即更新? (y/N): ").strip().lower()
                     if update_now == 'y':
-                        print("⚠️ 更新功能開發中，請手動下載新版本")
-                        print(f"下載連結: https://github.com/ucheng0921/artale-script/releases")
-                        input("按 Enter 繼續...")
-                else:
-                    print("✅ 目前已是最新版本")
-                    
+                        if updater.auto_update():
+                            print("🎉 更新完成！請重新啟動程式")
+                            return
             except Exception as e:
-                print(f"❌ 更新檢查失敗: {e}")
-                print("將以離線模式啟動...")
+                print(f"更新檢查失敗: {e}")
         
         # 啟動 GUI
         from gui import run_gui

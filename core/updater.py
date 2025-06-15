@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 class AutoUpdater:
-    def __init__(self, github_repo: str = "ucheng0921/artale-script"):
+    def __init__(self, github_repo: str = "yourusername/artale-script"):
         self.github_repo = github_repo
         self.api_base = f"https://api.github.com/repos/{github_repo}"
         self.base_dir = Path(__file__).parent.parent
