@@ -1,7 +1,7 @@
 """
 版本資訊
 """
-__version__ = "1.2.9"
-__build__ = "202506151944"
+__version__ = "1.2.10"
+__build__ = "202506152022"
 __author__ = "Artale Script Team"
 __description__ = "Artale 遊戲自動化腳本"
