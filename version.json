@@ -1,10 +1,8 @@
 {
-  "version": "1.2.5",
-  "build": "202506151800",
+  "version": "1.2.6",
+  "build": "202506151848",
   "release_date": "2025-06-15",
-  "changelog": [
-    "修復認證問題"
-  ],
+  "changelog": [],
   "min_python_version": "3.8",
   "required_files": [
     "config.py",
