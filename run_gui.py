@@ -11,29 +11,35 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 def main():
-    """主要入口點"""
+    """主要入口點 - 禁用更新檢查版本"""
     try:
         # 檢查環境
         if not check_environment():
             return
         
-        # 檢查更新 (可選)
-        check_updates = input("是否檢查更新? (Y/n): ").strip().lower()
-        if check_updates in ('', 'y', 'yes'):
-            try:
-                from core.updater import AutoUpdater
-                updater = AutoUpdater("ucheng0921/artale-script")
-                has_update, update_info = updater.check_for_updates()
-                
-                if has_update:
-                    print(f"🆕 發現新版本: {update_info['version']}")
-                    update_now = input("是否立即更新? (y/N): ").strip().lower()
-                    if update_now == 'y':
-                        if updater.auto_update():
-                            print("🎉 更新完成！請重新啟動程式")
-                            return
-            except Exception as e:
-                print(f"更新檢查失敗: {e}")
+        # 可選：添加更新檢查開關
+        enable_update_check = os.getenv('ENABLE_UPDATE_CHECK', 'false').lower() == 'true'
+        
+        if enable_update_check:
+            # 檢查更新 (可選)
+            check_updates = input("是否檢查更新? (Y/n): ").strip().lower()
+            if check_updates in ('', 'y', 'yes'):
+                try:
+                    from core.updater import AutoUpdater
+                    updater = AutoUpdater("ucheng0921/artale-script")
+                    has_update, update_info = updater.check_for_updates()
+                    
+                    if has_update:
+                        print(f"🆕 發現新版本: {update_info['version']}")
+                        update_now = input("是否立即更新? (y/N): ").strip().lower()
+                        if update_now == 'y':
+                            if updater.auto_update():
+                                print("🎉 更新完成！請重新啟動程式")
+                                return
+                except Exception as e:
+                    print(f"更新檢查失敗: {e}")
+        else:
+            print("🔒 更新檢查已禁用（保護代碼安全）")
         
         # 啟動 GUI
         from gui import run_gui
