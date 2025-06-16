@@ -102,9 +102,10 @@ class SimplifiedMonsterDetector:
             
         # 找出最大的模板尺寸
         max_template_size = max(max(w, h) for w, h in self.template_sizes)
-        
+
         # 基礎檢測範圍
-        base_size = max(400, max_template_size + 100)
+        from config import ATTACK_RANGE_X
+        base_size = max(ATTACK_RANGE_X, max_template_size + 100)
         
         # 移動時適度增加範圍
         if movement_state:
