@@ -1,6 +1,22 @@
 """
 Artale Script GUI 啟動器 - 重構版本
 """
+import sys
+if hasattr(sys, '_MEIPASS'):
+    class SilentOutput:
+        def write(self, text): pass
+        def flush(self): pass
+    try: sys.stdout.write(''); sys.stdout.flush()
+    except: sys.stdout = SilentOutput()
+    try: sys.stderr.write(''); sys.stderr.flush()  
+    except: sys.stderr = SilentOutput()
+    import builtins
+    original_print = builtins.print
+    def safe_print(*args, **kwargs):
+        try: original_print(*args, **kwargs)
+        except: pass
+    builtins.print = safe_print
+
 import os
 import sys
 from pathlib import Path

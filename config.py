@@ -1,18 +1,52 @@
 """
-配置模組 - 環境變數版本
-使用相對路徑和環境變數，消除硬編碼
+配置模組 - 修復版，解決 PyInstaller 路徑問題
 """
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
 # 載入環境變數
 load_dotenv()
 
-# 基礎路徑配置
-BASE_DIR = Path(__file__).parent
-WORKING_DIR = os.getenv('WORKING_DIR', str(BASE_DIR))
-ASSETS_DIR = os.getenv('ASSETS_DIR', str(BASE_DIR / 'assets' / 'game_resources'))
+def get_application_path():
+    """獲取應用程式的實際路徑（修復 PyInstaller 路徑問題）"""
+    if hasattr(sys, '_MEIPASS'):
+        # PyInstaller 打包環境 - 返回 exe 所在目錄
+        return Path(sys.executable).parent
+    else:
+        # 開發環境
+        return Path(__file__).parent
+
+def get_resource_path(relative_path):
+    """獲取資源文件路徑（PyInstaller 兼容）"""
+    if hasattr(sys, '_MEIPASS'):
+        # PyInstaller 打包環境 - 資源在臨時目錄中
+        return os.path.join(sys._MEIPASS, relative_path)
+    else:
+        # 開發環境 - 使用相對路徑
+        base_path = Path(__file__).parent
+        return os.path.join(base_path, relative_path)
+
+# 基礎路徑配置 - 修復版
+APPLICATION_DIR = get_application_path()  # exe 所在目錄
+BASE_DIR = APPLICATION_DIR
+
+# 工作目錄設定
+WORKING_DIR = os.getenv('WORKING_DIR')
+if not WORKING_DIR:
+    WORKING_DIR = str(APPLICATION_DIR)
+
+# 資源目錄設定 - 關鍵修復
+ASSETS_DIR = os.getenv('ASSETS_DIR')
+if not ASSETS_DIR:
+    # 優先嘗試 exe 同目錄的 assets
+    exe_dir_assets = APPLICATION_DIR / 'assets' / 'game_resources'
+    if exe_dir_assets.exists():
+        ASSETS_DIR = str(exe_dir_assets)
+    else:
+        # 使用打包內的資源
+        ASSETS_DIR = get_resource_path('assets/game_resources')
 
 # 確保關鍵路徑存在
 def ensure_directories():
@@ -72,7 +106,7 @@ JUMP_KEY = 'alt'
 ATTACK_KEY = 'z'
 SECONDARY_ATTACK_KEY = 'v'
 ENABLE_SECONDARY_ATTACK = 0
-PRIMARY_ATTACK_CHANCE = 1.0
+PRIMARY_ATTACK_CHANCE = 0.8
 SECONDARY_ATTACK_CHANCE = 0.2
 ATTACK_RANGE_X = 200
 JUMP_ATTACK_MODE = 'original'
@@ -111,7 +145,7 @@ ENABLE_ENHANCED_MOVEMENT = True
 ENABLE_JUMP_MOVEMENT = False
 JUMP_MOVEMENT_CHANCE = 0.05
 ENABLE_DASH_MOVEMENT = True
-DASH_MOVEMENT_CHANCE = 0.95
+DASH_MOVEMENT_CHANCE = 0.7
 DASH_SKILL_KEY = 'x'
 DASH_SKILL_COOLDOWN = 3.0
 MOVEMENT_PRIORITY = ['jump', 'dash', 'normal']
@@ -135,3 +169,19 @@ MAX_DETECTION_SIZE = 1000
 
 # 在模組載入時確保目錄存在
 ensure_directories()
+
+# 調試信息
+print(f"🔧 [配置調試] 路徑信息:")
+print(f"   APPLICATION_DIR: {APPLICATION_DIR}")
+print(f"   ASSETS_DIR: {ASSETS_DIR}")
+print(f"   是否為打包環境: {hasattr(sys, '_MEIPASS')}")
+if hasattr(sys, '_MEIPASS'):
+    print(f"   PyInstaller 臨時目錄: {sys._MEIPASS}")
+
+# 驗證關鍵文件
+key_files = ['medal.png', 'sign_text.png', 'rune_text.png', 'red.png']
+print(f"🔍 [配置調試] 關鍵文件檢查:")
+for filename in key_files:
+    filepath = os.path.join(ASSETS_DIR, filename)
+    exists = os.path.exists(filepath)
+    print(f"   {'✅' if exists else '❌'} {filename}: {filepath}")
