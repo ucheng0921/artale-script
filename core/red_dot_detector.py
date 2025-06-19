@@ -4,6 +4,7 @@
 import cv2
 import time
 import random
+import os
 
 
 class RedDotDetector:
@@ -29,7 +30,8 @@ class RedDotDetector:
         self.debug_red_detection = True
         
     def load_red_template(self, red_path):
-        """載入紅點模板"""
+        """載入紅點模板 - 修改版支援多模板"""
+        # 先嘗試載入主要模板（保持原有邏輯）
         self.red_template = cv2.imread(red_path, cv2.IMREAD_COLOR)
         if self.red_template is None:
             print(f"❌ 無法載入紅點模板: {red_path}")
@@ -39,25 +41,57 @@ class RedDotDetector:
             if self.debug_red_detection:
                 h, w = self.red_template.shape[:2]
                 print(f"🔧 [調試] 紅點模板尺寸: {w}x{h}")
-            
-            # ★★★ 新增：載入config中的重置閾值 ★★★
-            try:
-                from config import RED_DOT_RESET_THRESHOLD
-                self.max_no_detections = RED_DOT_RESET_THRESHOLD
-                print(f"🔧 [Config] 載入紅點消失重置閾值: {RED_DOT_RESET_THRESHOLD} 次")
-            except ImportError:
-                print("⚠️ 無法載入config重置閾值，使用預設值 3 次")
-            
-            return True
-    
-    def detect_red_dot(self, screenshot, client_width, client_height):
-        """檢測左上角的紅點"""
-        if self.red_template is None:
-            return False
         
-        # 定義左上角檢測區域 (調整大小以覆蓋可能的紅點位置)
-        detection_width = min(300, client_width // 3)  # 左上角1/3寬度，最多300px
-        detection_height = min(200, client_height // 2)  # 左上角1/4高度，最多200px
+        # 初始化模板列表
+        self.red_templates = [self.red_template]
+        
+        # 檢查是否啟用多紅點模式
+        try:
+            from config import ENABLE_MULTI_RED_DOT
+            if ENABLE_MULTI_RED_DOT:
+                # 自動載入 red1.png ~ red4.png
+                base_dir = os.path.dirname(red_path)
+                for i in range(1, 5):  # red1.png 到 red4.png
+                    extra_path = os.path.join(base_dir, f'red{i}.png')
+                    if os.path.exists(extra_path):
+                        extra_template = cv2.imread(extra_path, cv2.IMREAD_COLOR)
+                        if extra_template is not None:
+                            self.red_templates.append(extra_template)
+                            h, w = extra_template.shape[:2]
+                            print(f"✅ 載入額外紅點模板: red{i}.png ({w}x{h})")
+                        else:
+                            print(f"⚠️ 無法讀取: red{i}.png")
+                    else:
+                        print(f"⚠️ 檔案不存在: red{i}.png")
+                
+                print(f"📊 總計載入 {len(self.red_templates)} 個紅點模板")
+        except ImportError:
+            # 如果沒有 ENABLE_MULTI_RED_DOT 設定，只使用單一模板
+            print("使用單一紅點模板模式")
+        
+        # 載入config中的重置閾值（保持原有邏輯）
+        try:
+            from config import RED_DOT_RESET_THRESHOLD
+            self.max_no_detections = RED_DOT_RESET_THRESHOLD
+            print(f"🔧 [Config] 載入紅點消失重置閾值: {RED_DOT_RESET_THRESHOLD} 次")
+        except ImportError:
+            print("⚠️ 無法載入config重置閾值，使用預設值 3 次")
+        
+        return True
+
+    def detect_red_dot(self, screenshot, client_width, client_height):
+        """檢測左上角的紅點 - 修改版支援多模板"""
+        # 使用模板列表而不是單一模板
+        templates_to_check = getattr(self, 'red_templates', None)
+        if not templates_to_check:
+            # 向後相容：如果沒有模板列表，使用單一模板
+            if self.red_template is None:
+                return False
+            templates_to_check = [self.red_template]
+        
+        # 定義左上角檢測區域
+        detection_width = min(300, client_width // 3)
+        detection_height = min(200, client_height // 2)
         
         # 提取左上角區域
         top_left_region = screenshot[0:detection_height, 0:detection_width]
@@ -68,28 +102,41 @@ class RedDotDetector:
             return False
         
         try:
-            # 模板匹配
-            result = cv2.matchTemplate(top_left_region, self.red_template, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, max_loc = cv2.minMaxLoc(result)
-            
             # 從config載入檢測閾值
             try:
                 from config import RED_DOT_DETECTION_THRESHOLD
                 threshold = RED_DOT_DETECTION_THRESHOLD
             except ImportError:
-                threshold = 0.7  # 預設閾值
+                threshold = 0.7
                 if self.debug_red_detection:
                     print("⚠️ 無法載入config閾值設定，使用預設值 0.7")
             
-            if self.debug_red_detection and max_val > 0.4:  # 顯示較高的匹配度
-                print(f"🔧 [調試] 紅點匹配度: {max_val:.3f} (閾值: {threshold})")
+            # 檢測所有模板
+            best_match_val = 0
+            best_template_index = -1
             
-            if max_val >= threshold:
+            for i, template in enumerate(templates_to_check):
+                try:
+                    result = cv2.matchTemplate(top_left_region, template, cv2.TM_CCOEFF_NORMED)
+                    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+                    
+                    if max_val > best_match_val:
+                        best_match_val = max_val
+                        best_template_index = i
+                        
+                except cv2.error as e:
+                    if self.debug_red_detection:
+                        print(f"🔧 [調試] 模板 {i+1} 匹配錯誤: {e}")
+                    continue
+            
+            if self.debug_red_detection and best_match_val > 0.4:
+                template_name = "red.png" if best_template_index == 0 else f"red{best_template_index}.png"
+                print(f"🔧 [調試] 紅點匹配度: {best_match_val:.3f} ({template_name}, 閾值: {threshold})")
+            
+            if best_match_val >= threshold:
                 if self.debug_red_detection:
-                    template_h, template_w = self.red_template.shape[:2]
-                    red_x = max_loc[0] + template_w // 2
-                    red_y = max_loc[1] + template_h // 2
-                    print(f"🔴 檢測到紅點！位置: ({red_x}, {red_y}), 匹配度: {max_val:.3f}")
+                    template_name = "red.png" if best_template_index == 0 else f"red{best_template_index}.png"
+                    print(f"🔴 檢測到紅點！模板: {template_name}, 匹配度: {best_match_val:.3f}")
                 return True
             
             return False
