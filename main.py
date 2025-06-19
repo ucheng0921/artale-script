@@ -162,7 +162,7 @@ def load_templates():
     # 載入方向檢測模板
     direction_templates = {}
     direction_masks = {}
-    direction_folder = r'C:\artale_script\ArtaleScriptFiles\Detection'
+    direction_folder = os.path.join(ASSETS_DIR, 'Detection')
     
     if os.path.exists(direction_folder):
         for file_name in os.listdir(direction_folder):

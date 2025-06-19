@@ -104,7 +104,7 @@ class RuneMode:
                 pyautogui.keyUp('down')
                 print(f"輸入第 {i} 個方向鍵: {direction}")
                 pyautogui.press(direction)
-                time.sleep(2)  # 每個方向鍵間隔2秒
+                time.sleep(1)  # 每個方向鍵間隔2秒
             
             print("方向序列輸入完成，等待2秒後驗證...")
             time.sleep(2)  # 等待輸入效果生效
