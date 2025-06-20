@@ -6,7 +6,6 @@ import numpy as np
 import pyautogui
 import time
 import random
-from config import ATTACK_RANGE_X
 from config import JUMP_KEY
 
 
@@ -27,10 +26,27 @@ def preprocess_screenshot(screenshot):
     return edges
 
 def simple_find_medal(screenshot, template, threshold):
-    """簡單的模板匹配函數"""
-    result = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
+    """簡單的模板匹配函數 - 修改版（只搜索下半畫面）"""
+    
+    # ★★★ 關鍵修改：只搜索下半畫面 ★★★
+    height = screenshot.shape[0]
+    half_height = height // 2
+    
+    # 裁剪為下半畫面
+    lower_half = screenshot[half_height:, :]
+    
+    # 在下半畫面進行模板匹配
+    result = cv2.matchTemplate(lower_half, template, cv2.TM_CCOEFF_NORMED)
     _, max_val, _, max_loc = cv2.minMaxLoc(result)
-    return max_val >= threshold, max_loc, max_val
+    
+    found = max_val >= threshold
+    
+    if found:
+        # ★★★ 重要：調整座標到完整畫面的位置 ★★★
+        actual_loc = (max_loc[0], max_loc[1] + half_height)
+        return found, actual_loc, max_val
+    else:
+        return found, max_loc, max_val
 
 def detect_sign_text(screenshot, sign_template, threshold=0.5):
     """檢測sign_text在螢幕上方區域"""
@@ -262,6 +278,7 @@ def quick_attack_monster(monster_x, monster_y, player_x, player_y, movement, cli
     cliff_detection.last_check_time = time.time()
     
     print(f"✅ 攻擊完成: {movement.direction}({movement.current_movement_type})")
+    time.sleep(0.1) # 攻擊斷點
 
 def attack_monster_with_category(monster_x, monster_y, player_x, player_y, movement, cliff_detection, monster_category):
     """★★★ 修復版分類攻擊函數 ★★★"""

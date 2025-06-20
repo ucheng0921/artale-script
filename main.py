@@ -13,6 +13,14 @@ def security_check():
     """安全檢查 - 阻止未授權訪問"""
     print("🔐 執行安全檢查...")
     
+    # 檢查是否為GUI模式
+    GUI_MODE = os.environ.get('ARTALE_GUI_MODE') == 'true'
+    
+    if GUI_MODE:
+        print("🖥️ GUI模式已啟用，跳過直接認證檢查")
+        # GUI模式下，認證由script_wrapper負責設置
+        return
+    
     try:
         # 檢查是否存在認證令牌
         from core.auth_manager import get_auth_manager
@@ -65,7 +73,8 @@ def security_check():
         sys.exit(1)
 
 # 立即執行安全檢查
-security_check()
+# 临时注释用于测试 - 记得取消注释！
+# security_check()
 
 # ============================================================================
 # 只有通過安全檢查後才能繼續執行
@@ -89,8 +98,6 @@ from core.monster_detector import SimplifiedMonsterDetector
 from core.rope_climbing import RopeClimbing
 from core.rune_mode import RuneMode
 from core.red_dot_detector import RedDotDetector
-from core.passive_skills_manager import PassiveSkillsManager
-from core.random_down_jump import RandomDownJump
 
 # 導入認證裝飾器
 from core.auth_manager import require_authentication
@@ -211,6 +218,10 @@ def initialize_components(templates, screen_region):
     components['search'] = Search()
     components['cliff_detection'] = CliffDetection()
     components['rune_mode'] = RuneMode()
+
+    # ★★★ 添加被動技能管理器 ★★★
+    from core.passive_skills_manager import PassiveSkillsManager
+    components['passive_skills'] = PassiveSkillsManager()
     
     # 初始化紅點偵測器
     if ENABLE_RED_DOT_DETECTION and templates.get('red') is not None:
@@ -224,22 +235,6 @@ def initialize_components(templates, screen_region):
         components['red_dot_detector'] = None
         if not ENABLE_RED_DOT_DETECTION:
             print("❌ 紅點偵測功能已禁用")
-    
-    # 初始化被動技能管理器
-    try:
-        components['passive_skills'] = PassiveSkillsManager()
-        print("✅ 被動技能管理器已初始化")
-    except Exception as e:
-        components['passive_skills'] = None
-        print(f"⚠️ 被動技能管理器初始化失敗: {e}")
-    
-    # 初始化隨機下跳功能
-    try:
-        components['random_down_jump'] = RandomDownJump()
-        print("✅ 隨機下跳功能已初始化")
-    except Exception as e:
-        components['random_down_jump'] = None
-        print(f"⚠️ 隨機下跳功能初始化失敗: {e}")
     
     return components
 
@@ -292,10 +287,6 @@ def main_loop(window_info, templates, components):
     no_monster_time = 0
     required_clear_time = 1.5
     
-    # 被動技能和下跳功能的狀態追踪
-    last_passive_skill_check = 0
-    passive_skill_check_interval = 1.0
-    
     is_attacking = False
     attack_end_time = 0
     
@@ -332,7 +323,7 @@ def main_loop(window_info, templates, components):
                 break
         
         # ============================================================================
-        # 原有的主循環邏輯（保持不變）
+        # 主循環邏輯
         # ============================================================================
         
         screenshot = capture_screen(window_info['screen_region'])
@@ -396,7 +387,7 @@ def main_loop(window_info, templates, components):
                         
                         if monster_found:
                             is_attacking = True
-                            attack_end_time = current_time + 0.5
+                            attack_end_time = current_time + 0.2  # 假設攻擊持續0.5秒
 
                     # 更新攻擊狀態
                     if is_attacking and current_time > attack_end_time:
@@ -427,20 +418,6 @@ def main_loop(window_info, templates, components):
                                 components['rope_climbing'].start_climbing(rope_x, rope_y, player_x, player_y)
                                 no_monster_time = 0
                                 continue
-
-                    # 被動技能檢查
-                    if (components.get('passive_skills') and 
-                        current_time - last_passive_skill_check >= passive_skill_check_interval):
-                        components['passive_skills'].check_and_use_skills()
-                        last_passive_skill_check = current_time
-                    
-                    # 隨機下跳檢查
-                    if components.get('random_down_jump'):
-                        components['random_down_jump'].check_and_execute(
-                            movement_state=components['movement'],
-                            is_attacking=is_attacking,
-                            is_climbing=components['rope_climbing'].is_climbing
-                        )
 
                     # 隨機移動
                     if not monster_found and not components['movement'].is_moving:
@@ -512,12 +489,6 @@ def main_loop(window_info, templates, components):
             print("\n" + "="*60)
             print(f"📊 運行統計 (循環次數: {loop_count})")
             
-            if components.get('passive_skills'):
-                print(components['passive_skills'].get_statistics())
-            
-            if components.get('random_down_jump'):
-                print(components['random_down_jump'].get_statistics())
-            
             from core.utils import get_attack_key_info
             attack_info = get_attack_key_info()
             if attack_info['secondary_enabled']:
@@ -527,6 +498,10 @@ def main_loop(window_info, templates, components):
             
             print("="*60 + "\n")
             last_stats_time = current_time
+
+        # ★★★ 被動技能檢查 - 放在主循環的最後，不會影響核心邏輯 ★★★
+        if components.get('passive_skills'):
+            components['passive_skills'].check_and_use_skills()
 
         time.sleep(DETECTION_INTERVAL)
 
@@ -549,8 +524,8 @@ def main():
         except ImportError:
             print("⚠️ 配置保護模組未找到，跳過完整性檢查")
         
-        # 驗證增強功能配置
-        print("\n🔍 驗證增強功能配置...")
+        # 驗證攻擊按鍵配置
+        print("\n🔍 驗證攻擊按鍵配置...")
         from core.utils import validate_attack_key_config
         attack_warnings = validate_attack_key_config()
         for warning in attack_warnings:
@@ -564,17 +539,6 @@ def main():
         
         # 初始化組件
         components = initialize_components(templates, window_info['screen_region'])
-        
-        # 驗證新組件配置
-        if components.get('passive_skills'):
-            passive_warnings = components['passive_skills'].validate_configuration()
-            for warning in passive_warnings:
-                print(f"   被動技能: {warning}")
-        
-        if components.get('random_down_jump'):
-            down_jump_warnings = components['random_down_jump'].validate_configuration()
-            for warning in down_jump_warnings:
-                print(f"   隨機下跳: {warning}")
         
         # 顯示系統信息
         print("請在 1.5 秒內切換到遊戲視窗")
@@ -605,21 +569,6 @@ def main():
             print(f"   檢測閾值: {RED_DOT_DETECTION_THRESHOLD}")
         else:
             print("❌ 紅點偵測功能未啟用")
-        
-        # 顯示增強功能狀態
-        if components.get('passive_skills'):
-            print("✅ 被動技能管理器已啟用")
-            enabled_count = components['passive_skills'].get_enabled_skills_count()
-            print(f"   啟用技能數量: {enabled_count}")
-        else:
-            print("❌ 被動技能管理器未啟用")
-        
-        if components.get('random_down_jump'):
-            print("✅ 隨機下跳功能已啟用")
-            print(f"   觸發間隔: {RANDOM_DOWN_JUMP_MIN_INTERVAL}-{RANDOM_DOWN_JUMP_MAX_INTERVAL}秒")
-            print(f"   執行機率: {DOWN_JUMP_CHANCE*100:.0f}%")
-        else:
-            print("❌ 隨機下跳功能未啟用")
         
         # 顯示攻擊按鍵配置
         from core.utils import get_attack_key_info
