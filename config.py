@@ -107,14 +107,14 @@ SIGN_CHECK_FREQUENCY = 3
 # =============================================================================
 
 # 怪物檢測與攻擊配置
-ENABLED_MONSTERS = ['monster5']
+ENABLED_MONSTERS = ['monster1', 'monster2', 'monster3']  # 可根據需要修改
 JUMP_KEY = 'alt'
 ATTACK_KEY = 'z'
 SECONDARY_ATTACK_KEY = 'v'
 ENABLE_SECONDARY_ATTACK = 0
-PRIMARY_ATTACK_CHANCE = 0.8
+PRIMARY_ATTACK_CHANCE = 1
 SECONDARY_ATTACK_CHANCE = 0.2
-ATTACK_RANGE_X = 200
+ATTACK_RANGE_X = 600
 JUMP_ATTACK_MODE = 'original'
 
 # 被動技能系統配置

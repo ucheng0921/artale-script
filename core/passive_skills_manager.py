@@ -192,16 +192,21 @@ class PassiveSkillsManager:
             if not enabled:
                 return False
             
-            # 檢查冷卻時間
+            # 檢查冷卻時間 
             last_used = self.last_used_time[skill_id]
             time_since_use = current_time - last_used
-            
+
+            # ★★★ 修復：初始值為0時應該可以立即使用 ★★★
             if last_used > 0 and time_since_use < cooldown:
                 # 還在冷卻中
-                if self.debug_mode and self.check_count % 200 == int(skill_num):  # 分散輸出
+                if self.debug_mode and self.check_count % 200 == int(skill_num):
                     remaining = cooldown - time_since_use
                     print(f"🕒 [調試] 技能{skill_num}({key}) 冷卻中，剩餘 {remaining:.1f}秒")
                 return False
+
+            # ★★★ 新增：確保初始狀態可以使用 ★★★
+            if last_used == 0:
+                print(f"🎯 [調試] 技能{skill_num}({key}) 初次可用，準備使用")
             
             # ★★★ 詳細調試：準備使用技能 ★★★
             if self.debug_mode:
