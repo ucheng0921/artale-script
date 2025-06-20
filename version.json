@@ -1,7 +1,7 @@
 {
-  "version": "1.2.14",
-  "build": "202506182223",
-  "release_date": "2025-06-18",
+  "version": "1.2.15",
+  "build": "202506202323",
+  "release_date": "2025-06-20",
   "changelog": [],
   "min_python_version": "3.8",
   "required_files": [
