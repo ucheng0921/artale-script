@@ -375,98 +375,58 @@ class ScriptWrapper:
             return None
     
     def _initialize_components(self, templates, screen_region):
-            """初始化組件"""
-            try:
-                from core.monster_detector import SimplifiedMonsterDetector
-                from core.movement import Movement
-                from core.enhanced_movement import EnhancedMovement
-                from core.search import Search
-                from core.cliff_detection import CliffDetection
-                from core.rope_climbing import RopeClimbing
-                from core.rune_mode import RuneMode
-                from core.red_dot_detector import RedDotDetector
-                # ★★★ 新增被動技能和隨機下跳 ★★★
-                from core.passive_skills_manager import PassiveSkillsManager
-                from core.random_down_jump import RandomDownJump
-                
-                components = {}
-                
-                # 初始化怪物檢測器
-                components['monster_detector'] = SimplifiedMonsterDetector()
-                components['monster_detector'].setup_templates()
-                
-                if not components['monster_detector'].monster_templates:
-                    raise ValueError("沒有載入到任何怪物模板，請檢查 ENABLED_MONSTERS 設定和資料夾路徑")
+        """初始化組件"""
+        try:
+            from core.monster_detector import SimplifiedMonsterDetector
+            from core.movement import Movement
+            from core.enhanced_movement import EnhancedMovement
+            from core.search import Search
+            from core.cliff_detection import CliffDetection
+            from core.rope_climbing import RopeClimbing
+            from core.rune_mode import RuneMode
+            from core.red_dot_detector import RedDotDetector
+            
+            components = {}
+            
+            # 初始化怪物檢測器
+            components['monster_detector'] = SimplifiedMonsterDetector()
+            components['monster_detector'].setup_templates()
+            
+            if not components['monster_detector'].monster_templates:
+                raise ValueError("沒有載入到任何怪物模板，請檢查 ENABLED_MONSTERS 設定和資料夾路徑")
 
-                # 初始化爬繩模組
-                components['rope_climbing'] = RopeClimbing()
-                components['rope_climbing'].load_rope_templates(self.config.ROPE_PATH)
-                components['rope_climbing'].set_screenshot_callback(lambda: self.utils.capture_screen(screen_region))
-                components['rope_climbing'].set_medal_template(templates['medal'])
+            # 初始化爬繩模組
+            components['rope_climbing'] = RopeClimbing()
+            components['rope_climbing'].load_rope_templates(self.config.ROPE_PATH)
+            components['rope_climbing'].set_screenshot_callback(lambda: self.utils.capture_screen(screen_region))
+            components['rope_climbing'].set_medal_template(templates['medal'])
 
-                # 初始化其他組件
-                components['movement'] = Movement()
-                components['search'] = Search()
-                components['cliff_detection'] = CliffDetection()
-                components['rune_mode'] = RuneMode()
-                
-                # 初始化紅點偵測器
-                if self.config.ENABLE_RED_DOT_DETECTION and templates.get('red') is not None:
-                    components['red_dot_detector'] = RedDotDetector()
-                    if components['red_dot_detector'].load_red_template(self.config.RED_DOT_PATH):
-                        self._send_log("✅ 紅點偵測功能已啟用")
-                    else:
-                        components['red_dot_detector'] = None
-                        self._send_log("⚠️ 紅點偵測功能啟用失敗")
+            # 初始化其他組件
+            components['movement'] = Movement()
+            components['search'] = Search()
+            components['cliff_detection'] = CliffDetection()
+            components['rune_mode'] = RuneMode()
+            
+            # 初始化紅點偵測器
+            if self.config.ENABLE_RED_DOT_DETECTION and templates.get('red') is not None:
+                components['red_dot_detector'] = RedDotDetector()
+                if components['red_dot_detector'].load_red_template(self.config.RED_DOT_PATH):
+                    self._send_log("✅ 紅點偵測功能已啟用")
                 else:
                     components['red_dot_detector'] = None
-                    if not self.config.ENABLE_RED_DOT_DETECTION:
-                        self._send_log("❌ 紅點偵測功能已禁用")
-                
-                # ★★★ 初始化被動技能管理器 ★★★
-                try:
-                    components['passive_skills'] = PassiveSkillsManager()
-                    self._send_log("✅ 被動技能管理器已初始化")
-                    
-                    # 測試配置
-                    enabled_count = components['passive_skills'].get_enabled_skills_count()
-                    self._send_log(f"✅ 被動技能啟用數量: {enabled_count}")
-                    
-                    # 配置驗證
-                    warnings = components['passive_skills'].validate_configuration()
-                    for warning in warnings:
-                        self._send_log(f"   被動技能配置: {warning}")
-                        
-                except Exception as e:
-                    components['passive_skills'] = None
-                    self._send_log(f"❌ 被動技能管理器初始化失敗: {e}")
-                
-                # ★★★ 初始化隨機下跳功能 ★★★
-                try:
-                    components['random_down_jump'] = RandomDownJump()
-                    self._send_log("✅ 隨機下跳功能已初始化")
-                    
-                    if components['random_down_jump'].enabled:
-                        self._send_log(f"✅ 隨機下跳已啟用，觸發間隔: {components['random_down_jump'].min_interval}-{components['random_down_jump'].max_interval}秒")
-                    else:
-                        self._send_log("❌ 隨機下跳在配置中被禁用")
-                        
-                    # 配置驗證
-                    down_jump_warnings = components['random_down_jump'].validate_configuration()
-                    for warning in down_jump_warnings:
-                        self._send_log(f"   隨機下跳配置: {warning}")
-                        
-                except Exception as e:
-                    components['random_down_jump'] = None
-                    self._send_log(f"❌ 隨機下跳功能初始化失敗: {e}")
-                
-                component_count = len(components)
-                self._send_log(f"✅ 組件初始化完成，共初始化 {component_count} 個組件")
-                return components
-                
-            except Exception as e:
-                self._send_log(f"❌ 初始化組件失敗: {str(e)}")
-                return None
+                    self._send_log("⚠️ 紅點偵測功能啟用失敗")
+            else:
+                components['red_dot_detector'] = None
+                if not self.config.ENABLE_RED_DOT_DETECTION:
+                    self._send_log("❌ 紅點偵測功能已禁用")
+            
+            component_count = len(components)
+            self._send_log(f"✅ 組件初始化完成，共初始化 {component_count} 個組件")
+            return components
+            
+        except Exception as e:
+            self._send_log(f"❌ 初始化組件失敗: {str(e)}")
+            return None
     
     def _execute_main_loop(self):
         """執行主循環"""
@@ -521,59 +481,19 @@ class ScriptWrapper:
         if not self._setup_authentication_for_script():
             self._send_log("❌ 認證設置失敗，無法啟動腳本")
             return
-        # 初始化變數
         player_x = window_info['client_width'] // 2
         player_y = window_info['client_height'] // 2
         last_monster_detection_time = 0
         last_rope_detection_time = 0
         rope_detection_interval = 1.0
         
-        # 怪物清理狀態追踪
         no_monster_time = 0
         required_clear_time = 1.5
         
-        # ★★★ 被動技能和下跳功能的狀態追踪 ★★★
-        last_passive_skill_check = 0
-        passive_skill_check_interval = 1.0
-        
-        is_attacking = False
-        attack_end_time = 0
-        
-        # ★★★ 性能統計 ★★★
         loop_count = 0
-        stats_print_interval = 300
-        last_stats_time = time.time()
-
-        self._send_log("🎮 主循環開始執行（完整版本）")
         
-        # ★★★ 顯示功能狀態 ★★★
-        if components.get('passive_skills'):
-            self._send_log("✅ 被動技能管理器已載入")
-            enabled_count = components['passive_skills'].get_enabled_skills_count()
-            self._send_log(f"   啟用技能數量: {enabled_count}")
-        else:
-            self._send_log("❌ 被動技能管理器未載入")
+        self._send_log("🎮 主循環開始執行")
         
-        if components.get('random_down_jump'):
-            self._send_log("✅ 隨機下跳功能已載入")
-            if components['random_down_jump'].enabled:
-                self._send_log(f"   觸發間隔: {components['random_down_jump'].min_interval}-{components['random_down_jump'].max_interval}秒")
-            else:
-                self._send_log("   狀態: 已禁用")
-        else:
-            self._send_log("❌ 隨機下跳功能未載入")
-        
-        # ★★★ 顯示攻擊按鍵配置 ★★★
-        try:
-            from core.utils import get_attack_key_info
-            attack_info = get_attack_key_info()
-            if attack_info['secondary_enabled']:
-                self._send_log(f"🎯 攻擊按鍵配置: 主要={attack_info['primary_key']} ({attack_info['primary_chance']*100:.0f}%), 次要={attack_info['secondary_key']} ({attack_info['secondary_chance']*100:.0f}%)")
-            else:
-                self._send_log(f"🎯 攻擊按鍵配置: {attack_info['primary_key']} (僅主要攻擊)")
-        except:
-            pass
-
         while self.is_running and not self.is_stopping:
             try:
                 loop_count += 1
@@ -590,7 +510,7 @@ class ScriptWrapper:
                 if screenshot is None:
                     continue
 
-                # ★★★ 紅點偵測檢查 ★★★
+                # 紅點偵測檢查
                 if components.get('red_dot_detector') is not None:
                     should_change_channel = components['red_dot_detector'].handle_red_dot_detection(
                         screenshot, window_info['client_width'], window_info['client_height']
@@ -636,7 +556,7 @@ class ScriptWrapper:
                         components['search'].last_medal_found_time = time.time()
                         components['search'].medal_lost_count = 0
 
-                        # 怪物檢測
+                        # 怪物檢測 - 不再記錄擊殺數量
                         monster_found = False
                         if not components['search'].is_searching and current_time - last_monster_detection_time >= self.config.DETECTION_INTERVAL:
                             monster_found = components['monster_detector'].detect_monsters(
@@ -645,16 +565,9 @@ class ScriptWrapper:
                             )
                             last_monster_detection_time = current_time
                             
-                            # ★★★ 攻擊狀態追踪 ★★★
                             if monster_found:
-                                is_attacking = True
-                                attack_end_time = current_time
                                 self.script_stats['detections'] += 1
 
-                        # ★★★ 更新攻擊狀態 ★★★
-                        if is_attacking and current_time > attack_end_time:
-                            is_attacking = False
-                        
                         # 怪物清理狀態追踪
                         if monster_found:
                             no_monster_time = current_time
@@ -680,20 +593,6 @@ class ScriptWrapper:
                                     components['rope_climbing'].start_climbing(rope_x, rope_y, player_x, player_y)
                                     no_monster_time = 0
                                     continue
-
-                        # ★★★ 被動技能檢查 ★★★
-                        if (components.get('passive_skills') and 
-                            current_time - last_passive_skill_check >= passive_skill_check_interval):
-                            components['passive_skills'].check_and_use_skills()
-                            last_passive_skill_check = current_time
-                        
-                        # ★★★ 隨機下跳檢查 ★★★
-                        if components.get('random_down_jump'):
-                            components['random_down_jump'].check_and_execute(
-                                movement_state=components['movement'],
-                                is_attacking=is_attacking,
-                                is_climbing=components['rope_climbing'].is_climbing
-                            )
 
                         # 隨機移動
                         if not monster_found and not components['movement'].is_moving:
@@ -757,32 +656,6 @@ class ScriptWrapper:
                         window_info['client_width'], window_info['client_height'], 
                         components['monster_detector']
                     )
-
-                # ★★★ 定期統計信息 ★★★
-                if current_time - last_stats_time >= stats_print_interval:
-                    self._send_log("="*60)
-                    self._send_log(f"📊 運行統計 (循環次數: {loop_count})")
-                    
-                    if components.get('passive_skills'):
-                        stats = components['passive_skills'].get_statistics()
-                        self._send_log(stats)
-                    
-                    if components.get('random_down_jump'):
-                        stats = components['random_down_jump'].get_statistics()
-                        self._send_log(stats)
-                    
-                    try:
-                        from core.utils import get_attack_key_info
-                        attack_info = get_attack_key_info()
-                        if attack_info['secondary_enabled']:
-                            self._send_log(f"🎯 攻擊按鍵: {attack_info['primary_key']}({attack_info['primary_chance']*100:.0f}%), {attack_info['secondary_key']}({attack_info['secondary_chance']*100:.0f}%)")
-                        else:
-                            self._send_log(f"🎯 攻擊按鍵: {attack_info['primary_key']} (僅主要攻擊)")
-                    except:
-                        pass
-                    
-                    self._send_log("="*60)
-                    last_stats_time = current_time
 
                 time.sleep(self.config.DETECTION_INTERVAL)
                 
