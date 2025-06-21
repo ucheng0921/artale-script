@@ -1,11 +1,14 @@
 """
-配置設定面板 - 提供完整的配置設定界面（支援外部配置文件）
+配置設定面板 - 提供完整的配置設定界面（整合怪物下載功能）
 """
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox, filedialog
 from typing import Dict, Any, Callable, Tuple
 import datetime
+import os
+from pathlib import Path
+import re
 
 class ConfigPanel:
     """配置設定面板類"""
@@ -19,11 +22,18 @@ class ConfigPanel:
         self.widgets = {}
         self.current_values = {}
         
+        # 怪物相關
+        self.downloaded_monsters = {}  # 已下載的怪物
+        self.monster_downloader = None  # 怪物下載器
+        
         # 創建界面
         self.create_widgets()
         
         # 載入當前配置值
         self.load_current_config()
+        
+        # 掃描已下載的怪物（初始掃描，稍後會通過回調重新掃描獲取中文名稱）
+        self.scan_downloaded_monsters()
     
     def create_widgets(self):
         """創建配置設定界面"""
@@ -41,7 +51,12 @@ class ConfigPanel:
         
         # 為每個分類創建設定區域
         for category, category_configs in descriptions.items():
-            self.create_category_section(category, category_configs, types, choices)
+            if category == "怪物檢測與攻擊配置":
+                self.create_monster_category_section(category, category_configs, types, choices)
+            elif category == "被動技能系統配置":
+                self.create_passive_skills_section(category, category_configs, types, choices)
+            else:
+                self.create_category_section(category, category_configs, types, choices)
     
     def create_header(self):
         """創建頂部控制區域"""
@@ -105,9 +120,9 @@ class ConfigPanel:
         )
         info_label.pack(pady=(0, 5))
     
-    def create_category_section(self, category: str, category_configs: Dict[str, str], 
-                              types: Dict[str, str], choices: Dict[str, list]):
-        """創建分類設定區域"""
+    def create_monster_category_section(self, category: str, category_configs: Dict[str, str], 
+                                      types: Dict[str, str], choices: Dict[str, list]):
+        """創建怪物檢測與攻擊配置區域（特殊處理）"""
         # 分類框架
         category_frame = ctk.CTkFrame(self.main_frame)
         category_frame.pack(fill="x", pady=10)
@@ -124,29 +139,416 @@ class ConfigPanel:
         configs_frame = ctk.CTkFrame(category_frame)
         configs_frame.pack(fill="x", padx=15, pady=(0, 15))
         
-        # 特殊處理被動技能布局
-        if category == "被動技能系統配置":
-            self.create_passive_skills_section(configs_frame, category_configs, types, choices)
-        else:
-            # 為每個配置項創建控件
-            for config_key, description in category_configs.items():
+        # 處理 ENABLED_MONSTERS 特殊配置
+        for config_key, description in category_configs.items():
+            if config_key == 'ENABLED_MONSTERS':
+                self.create_monster_selection_widget(configs_frame, config_key, description)
+            else:
                 self.create_config_widget(configs_frame, config_key, description, 
                                         types.get(config_key, 'str'), 
                                         choices.get(config_key, []))
     
-    def create_passive_skills_section(self, parent, category_configs: Dict[str, str], 
+    def create_monster_selection_widget(self, parent, config_key: str, description: str):
+        """創建怪物選擇控件 - 整合下載功能的選項卡界面"""
+        # 主框架
+        item_frame = ctk.CTkFrame(parent)
+        item_frame.pack(fill="x", padx=10, pady=10)
+        
+        # 頂部：描述標籤
+        label_frame = ctk.CTkFrame(item_frame)
+        label_frame.pack(fill="x", padx=10, pady=(10, 5))
+        
+        desc_label = ctk.CTkLabel(
+            label_frame,
+            text=description,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            anchor="w"
+        )
+        desc_label.pack(side="left", padx=10, pady=5)
+        
+        key_label = ctk.CTkLabel(
+            label_frame,
+            text=f"({config_key})",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        key_label.pack(side="right", padx=10, pady=5)
+        
+        # 選項卡框架
+        tab_frame = ctk.CTkFrame(item_frame)
+        tab_frame.pack(fill="x", padx=10, pady=(5, 10))
+        
+        # 創建選項卡視圖
+        self.monster_tabview = ctk.CTkTabview(tab_frame)
+        self.monster_tabview.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # 已下載選項卡
+        self.downloaded_tab = self.monster_tabview.add("📦 已下載")
+        self.create_downloaded_monsters_section(self.downloaded_tab)
+        
+        # 下載器選項卡
+        self.downloader_tab = self.monster_tabview.add("⬇️ 下載器")
+        self.create_monster_downloader_section(self.downloader_tab)
+        
+        # 將選項卡控件存儲為怪物選擇控件
+        self.widgets[config_key] = {
+            'tabview': self.monster_tabview,
+            'downloaded_checkboxes': {},  # 稍後填充
+            'type': 'monster_selection'
+        }
+    
+    def create_downloaded_monsters_section(self, parent):
+        """創建已下載怪物選擇區域"""
+        # 搜尋框
+        search_frame = ctk.CTkFrame(parent)
+        search_frame.pack(fill="x", padx=5, pady=5)
+        
+        ctk.CTkLabel(search_frame, text="🔍 搜尋:", width=60).pack(side="left", padx=(5, 2), pady=5)
+        
+        self.downloaded_search_entry = ctk.CTkEntry(
+            search_frame,
+            placeholder_text="搜尋已下載的怪物...",
+            width=200
+        )
+        self.downloaded_search_entry.pack(side="left", fill="x", expand=True, padx=2, pady=5)
+        self.downloaded_search_entry.bind('<KeyRelease>', self.filter_downloaded_monsters)
+        
+        # 清除搜尋按鈕
+        clear_downloaded_button = ctk.CTkButton(
+            search_frame,
+            text="清除",
+            command=self.clear_downloaded_search,
+            width=50,
+            height=25,
+            font=ctk.CTkFont(size=10)
+        )
+        clear_downloaded_button.pack(side="right", padx=(2, 5), pady=5)
+        
+        # 控制按鈕
+        control_frame = ctk.CTkFrame(parent)
+        control_frame.pack(fill="x", padx=5, pady=2)
+        
+        # 統計標籤
+        self.downloaded_count_label = ctk.CTkLabel(
+            control_frame,
+            text="已下載: 0 個怪物",
+            font=ctk.CTkFont(size=11)
+        )
+        self.downloaded_count_label.pack(side="left", padx=5, pady=2)
+        
+        # 刷新按鈕
+        refresh_button = ctk.CTkButton(
+            control_frame,
+            text="🔄 刷新",
+            command=self.refresh_downloaded_monsters,
+            width=60,
+            height=25,
+            font=ctk.CTkFont(size=10)
+        )
+        refresh_button.pack(side="right", padx=2, pady=2)
+        
+        # 全選/全不選按鈕
+        select_all_downloaded_button = ctk.CTkButton(
+            control_frame,
+            text="全選",
+            command=self.select_all_downloaded,
+            width=50,
+            height=25,
+            font=ctk.CTkFont(size=10)
+        )
+        select_all_downloaded_button.pack(side="right", padx=2, pady=2)
+        
+        select_none_downloaded_button = ctk.CTkButton(
+            control_frame,
+            text="全不選",
+            command=self.select_none_downloaded,
+            width=50,
+            height=25,
+            font=ctk.CTkFont(size=10)
+        )
+        select_none_downloaded_button.pack(side="right", padx=2, pady=2)
+        
+        # 已下載怪物列表
+        self.downloaded_monsters_frame = ctk.CTkScrollableFrame(
+            parent,
+            height=200,
+            label_text="選擇要啟用的已下載怪物："
+        )
+        self.downloaded_monsters_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        # 存儲已下載怪物的複選框
+        self.downloaded_monster_checkboxes = {}
+        self.downloaded_monster_frames = {}
+    
+    def create_monster_downloader_section(self, parent):
+        """創建怪物下載器區域"""
+        try:
+            from .integrated_monster_downloader import IntegratedMonsterDownloader
+            
+            # 創建整合式怪物下載器
+            self.monster_downloader = IntegratedMonsterDownloader(
+                parent, 
+                self.config_manager,
+                on_download_complete=self.on_download_complete,
+                on_data_loaded=self.on_downloader_data_loaded
+            )
+            
+        except Exception as e:
+            error_label = ctk.CTkLabel(
+                parent,
+                text=f"怪物下載器載入失敗:\n{str(e)}",
+                font=ctk.CTkFont(size=12),
+                text_color="red"
+            )
+            error_label.pack(expand=True)
+    
+    def on_downloader_data_loaded(self):
+        """下載器數據載入完成回調"""
+        # 重新掃描已下載怪物，這時候可以獲取正確的中文名稱
+        self.scan_downloaded_monsters()
+    
+    def on_download_complete(self):
+        """下載完成回調"""
+        # 刷新已下載怪物列表
+        self.refresh_downloaded_monsters()
+        
+        # 如果怪物下載器可用，更新已下載怪物的中文名稱
+        if hasattr(self, 'monster_downloader') and self.monster_downloader:
+            for folder_name, monster_data in self.downloaded_monsters.items():
+                # 嘗試獲取更準確的中文名稱
+                chinese_name = self.get_monster_display_name_from_downloader(folder_name)
+                if chinese_name:
+                    monster_data['display_name'] = chinese_name
+            
+            # 重新顯示
+            self.refresh_downloaded_monsters_display()
+    
+    def get_save_path(self):
+        """獲取保存路徑"""
+        try:
+            if self.config_manager:
+                monster_base_path = self.config_manager.get_config('MONSTER_BASE_PATH')
+                if monster_base_path:
+                    return monster_base_path
+            
+            # 使用默認路徑
+            return os.path.join('.', 'assets', 'game_resources', 'monsters')
+        except:
+            return './monsters'
+    
+    def scan_downloaded_monsters(self):
+        """掃描已下載的怪物"""
+        try:
+            monsters_path = Path(self.get_save_path())
+            if not monsters_path.exists():
+                return
+            
+            self.downloaded_monsters = {}
+            
+            # 掃描怪物資料夾
+            for monster_dir in monsters_path.iterdir():
+                if monster_dir.is_dir():
+                    # 檢查是否有圖片文件
+                    image_files = list(monster_dir.glob("*.png")) + list(monster_dir.glob("*.jpg"))
+                    if image_files:
+                        # 資料夾名稱就是英文安全檔名
+                        folder_name = monster_dir.name
+                        
+                        # 嘗試從怪物下載器中獲取對應的中文名稱
+                        display_name = self.get_monster_display_name_from_downloader(folder_name)
+                        if not display_name:
+                            # 如果找不到，使用美化的英文名稱作為備選
+                            display_name = folder_name.replace('_', ' ').title()
+                        
+                        self.downloaded_monsters[folder_name] = {
+                            'display_name': display_name,
+                            'folder_name': folder_name,
+                            'image_count': len(image_files),
+                            'path': monster_dir
+                        }
+            
+            # 更新已下載怪物顯示
+            self.refresh_downloaded_monsters_display()
+            
+        except Exception as e:
+            print(f"掃描已下載怪物失敗: {str(e)}")
+    
+    def get_monster_display_name_from_downloader(self, folder_name: str) -> str:
+        """從怪物下載器中獲取對應的中文顯示名稱"""
+        try:
+            if hasattr(self, 'monster_downloader') and self.monster_downloader:
+                # 搜尋下載器中對應的怪物數據
+                for mob in self.monster_downloader.all_mobs:
+                    # 獲取這個怪物的英文安全檔名
+                    english_data = self.monster_downloader.english_names.get(mob['id'])
+                    if english_data and english_data['safe_name'] == folder_name:
+                        # 找到對應的怪物，返回 TMS 中文名稱
+                        return mob['name']
+            
+            return None
+        except Exception as e:
+            print(f"從下載器獲取顯示名稱失敗: {str(e)}")
+            return None
+    
+    def get_monster_display_name(self, folder_name: str) -> str:
+        """根據資料夾名稱獲取顯示名稱 - 備用方法"""
+        # 這個方法現在只是備用，主要使用 get_monster_display_name_from_downloader
+        # 將下劃線替換為空格，首字母大寫
+        display_name = folder_name.replace('_', ' ').title()
+        
+        # 如果包含 mob_ 前綴，移除它
+        if display_name.startswith('Mob '):
+            display_name = display_name[4:]
+        
+        return display_name
+    
+    def refresh_downloaded_monsters(self):
+        """刷新已下載怪物（重新掃描）"""
+        self.scan_downloaded_monsters()
+    
+    def refresh_downloaded_monsters_display(self):
+        """刷新已下載怪物顯示"""
+        # 清除舊的複選框
+        for widget in self.downloaded_monsters_frame.winfo_children():
+            widget.destroy()
+        self.downloaded_monster_checkboxes.clear()
+        self.downloaded_monster_frames.clear()
+        
+        # 更新統計
+        self.downloaded_count_label.configure(text=f"已下載: {len(self.downloaded_monsters)} 個怪物")
+        
+        # 創建新的複選框
+        for folder_name, monster_data in self.downloaded_monsters.items():
+            self.create_downloaded_monster_checkbox(folder_name, monster_data)
+        
+        # 過濾顯示（如果有搜尋條件）
+        self.filter_downloaded_monsters()
+    
+    def create_downloaded_monster_checkbox(self, folder_name: str, monster_data: dict):
+        """為已下載怪物創建複選框"""
+        monster_frame = ctk.CTkFrame(self.downloaded_monsters_frame)
+        monster_frame.pack(fill="x", padx=2, pady=1)
+        
+        # 複選框
+        var = ctk.BooleanVar()
+        checkbox = ctk.CTkCheckBox(
+            monster_frame,
+            text="",
+            variable=var,
+            width=20
+        )
+        checkbox.pack(side="left", padx=(5, 2), pady=2)
+        
+        # 怪物信息標籤
+        info_text = f"{monster_data['display_name']} ({folder_name}) - {monster_data['image_count']} 張圖片"
+        
+        info_label = ctk.CTkLabel(
+            monster_frame,
+            text=info_text,
+            font=ctk.CTkFont(size=10),
+            anchor="w"
+        )
+        info_label.pack(side="left", fill="x", expand=True, padx=2, pady=2)
+        
+        # 存儲複選框引用
+        self.downloaded_monster_checkboxes[folder_name] = {
+            'checkbox': checkbox,
+            'var': var,
+            'monster_data': monster_data,
+            'frame': monster_frame
+        }
+        self.downloaded_monster_frames[folder_name] = monster_frame
+    
+    def filter_downloaded_monsters(self, event=None):
+        """根據搜尋內容過濾已下載怪物"""
+        search_text = self.downloaded_search_entry.get().lower()
+        
+        for folder_name, monster_frame in self.downloaded_monster_frames.items():
+            monster_data = self.downloaded_monsters[folder_name]
+            display_name = monster_data['display_name'].lower()
+            folder_name_lower = folder_name.lower()
+            
+            # 檢查搜尋文字是否在顯示名稱或資料夾名稱中
+            if search_text in display_name or search_text in folder_name_lower:
+                monster_frame.pack(fill="x", padx=2, pady=1)
+            else:
+                monster_frame.pack_forget()
+    
+    def clear_downloaded_search(self):
+        """清除已下載怪物搜尋"""
+        self.downloaded_search_entry.delete(0, tk.END)
+        
+        # 顯示所有怪物
+        for monster_frame in self.downloaded_monster_frames.values():
+            monster_frame.pack(fill="x", padx=2, pady=1)
+    
+    def select_all_downloaded(self):
+        """全選已下載怪物 - 只對當前顯示的怪物生效"""
+        for folder_name, checkbox_data in self.downloaded_monster_checkboxes.items():
+            # 只對當前顯示的怪物進行操作
+            if self.downloaded_monster_frames[folder_name].winfo_viewable():
+                checkbox_data['var'].set(True)
+    
+    def select_none_downloaded(self):
+        """全不選已下載怪物 - 只對當前顯示的怪物生效"""
+        for folder_name, checkbox_data in self.downloaded_monster_checkboxes.items():
+            # 只對當前顯示的怪物進行操作
+            if self.downloaded_monster_frames[folder_name].winfo_viewable():
+                checkbox_data['var'].set(False)
+    
+    def create_category_section(self, category: str, category_configs: Dict[str, str], 
+                              types: Dict[str, str], choices: Dict[str, list]):
+        """創建普通分類設定區域"""
+        # 分類框架
+        category_frame = ctk.CTkFrame(self.main_frame)
+        category_frame.pack(fill="x", pady=10)
+        
+        # 分類標題
+        category_label = ctk.CTkLabel(
+            category_frame,
+            text=category,
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        category_label.pack(anchor="w", padx=15, pady=(15, 10))
+        
+        # 配置項容器
+        configs_frame = ctk.CTkFrame(category_frame)
+        configs_frame.pack(fill="x", padx=15, pady=(0, 15))
+        
+        # 為每個配置項創建控件
+        for config_key, description in category_configs.items():
+            self.create_config_widget(configs_frame, config_key, description, 
+                                    types.get(config_key, 'str'), 
+                                    choices.get(config_key, []))
+    
+    def create_passive_skills_section(self, category: str, category_configs: Dict[str, str], 
                                     types: Dict[str, str], choices: Dict[str, list]):
         """創建被動技能專用的緊湊布局"""
+        # 分類框架
+        category_frame = ctk.CTkFrame(self.main_frame)
+        category_frame.pack(fill="x", pady=10)
+        
+        # 分類標題
+        category_label = ctk.CTkLabel(
+            category_frame,
+            text=category,
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        category_label.pack(anchor="w", padx=15, pady=(15, 10))
+        
+        # 配置項容器
+        configs_frame = ctk.CTkFrame(category_frame)
+        configs_frame.pack(fill="x", padx=15, pady=(0, 15))
         
         # 總開關
         if 'ENABLE_PASSIVE_SKILLS' in category_configs:
-            self.create_config_widget(parent, 'ENABLE_PASSIVE_SKILLS', 
+            self.create_config_widget(configs_frame, 'ENABLE_PASSIVE_SKILLS', 
                                     category_configs['ENABLE_PASSIVE_SKILLS'],
                                     types.get('ENABLE_PASSIVE_SKILLS', 'bool'), [])
         
         # 為每個被動技能創建一行布局
         for skill_num in range(1, 5):
-            skill_frame = ctk.CTkFrame(parent)
+            skill_frame = ctk.CTkFrame(configs_frame)
             skill_frame.pack(fill="x", padx=10, pady=5)
             
             # 技能標題
@@ -183,7 +585,7 @@ class ConfigPanel:
             self.widgets[f'ENABLE_PASSIVE_SKILL_{skill_num}'] = enable_switch
         
         # 全局設定 - 只保留隨機延遲
-        global_frame = ctk.CTkFrame(parent)
+        global_frame = ctk.CTkFrame(configs_frame)
         global_frame.pack(fill="x", padx=10, pady=10)
         
         global_label = ctk.CTkLabel(
@@ -214,11 +616,6 @@ class ConfigPanel:
     def create_config_widget(self, parent, config_key: str, description: str, 
                            config_type: str, config_choices: list):
         """為單個配置項創建控件"""
-        # 特殊處理ENABLED_MONSTERS - 使用上下布局
-        if config_key == 'ENABLED_MONSTERS':
-            self.create_monster_config_widget(parent, config_key, description, config_type)
-            return
-        
         # 配置項框架
         item_frame = ctk.CTkFrame(parent)
         item_frame.pack(fill="x", padx=10, pady=5)
@@ -265,39 +662,6 @@ class ConfigPanel:
             widget = self.create_str_widget(widget_frame, config_key)
         
         # 存儲控件引用
-        self.widgets[config_key] = widget
-    
-    def create_monster_config_widget(self, parent, config_key: str, description: str, config_type: str):
-        """為怪物選擇創建特殊的上下布局控件"""
-        # 主框架
-        item_frame = ctk.CTkFrame(parent)
-        item_frame.pack(fill="x", padx=10, pady=10)
-        
-        # 頂部：描述標籤
-        label_frame = ctk.CTkFrame(item_frame)
-        label_frame.pack(fill="x", padx=10, pady=(10, 5))
-        
-        desc_label = ctk.CTkLabel(
-            label_frame,
-            text=description,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            anchor="w"
-        )
-        desc_label.pack(side="left", padx=10, pady=5)
-        
-        key_label = ctk.CTkLabel(
-            label_frame,
-            text=f"({config_key})",
-            font=ctk.CTkFont(size=10),
-            text_color="gray"
-        )
-        key_label.pack(side="right", padx=10, pady=5)
-        
-        # 底部：怪物選擇區域
-        widget_frame = ctk.CTkFrame(item_frame)
-        widget_frame.pack(fill="x", padx=10, pady=(5, 10))
-        
-        widget = self.create_monster_selection_widget(widget_frame)
         self.widgets[config_key] = widget
     
     def create_bool_widget(self, parent, config_key: str):
@@ -408,156 +772,18 @@ class ConfigPanel:
         return {'entry': entry, 'validate_label': validate_label}
     
     def create_list_widget(self, parent, config_key: str):
-        """創建列表控件（用於怪物選擇等）"""
+        """創建列表控件（用於其他列表類型）"""
         frame = ctk.CTkFrame(parent)
         frame.pack(fill="x", padx=10, pady=10)
         
-        # 如果是ENABLED_MONSTERS，創建特殊的多選界面
-        if config_key == 'ENABLED_MONSTERS':
-            return self.create_monster_selection_widget(frame)
-        else:
-            # 其他列表類型使用文本框
-            entry = ctk.CTkEntry(frame, width=400)
-            entry.pack(padx=10, pady=5)
-            
-            help_label = ctk.CTkLabel(frame, text="用逗號分隔多個值", font=ctk.CTkFont(size=10), text_color="gray")
-            help_label.pack(padx=10, pady=(0, 5))
-            
-            return entry
-    
-    def create_monster_selection_widget(self, parent):
-        """創建怪物選擇控件 - 可搜尋的滾動式界面"""
-        # 怪物類型映射 - 可以自定義顯示名稱
-        monster_display_names = {
-            'monster1': '木妖',
-            'monster2': '姑姑寶貝', 
-            'monster3': '藍寶、紅寶',
-            'monster4': '肥肥',
-            'monster5': '鋼之黑肥肥',
-            'monster6': '石巨人系列',
-            'monster7': '月妙',
-            'monster8': '青龍',
-            'grupin': '獨角獅',
-        }
+        # 其他列表類型使用文本框
+        entry = ctk.CTkEntry(frame, width=400)
+        entry.pack(padx=10, pady=5)
         
-        # 創建容器框架
-        container_frame = ctk.CTkFrame(parent)
-        container_frame.pack(fill="x", padx=10, pady=10)
+        help_label = ctk.CTkLabel(frame, text="用逗號分隔多個值", font=ctk.CTkFont(size=10), text_color="gray")
+        help_label.pack(padx=10, pady=(0, 5))
         
-        # 頂部控制區域
-        control_frame = ctk.CTkFrame(container_frame)
-        control_frame.pack(fill="x", padx=10, pady=(10, 5))
-        
-        # 搜尋框
-        search_frame = ctk.CTkFrame(control_frame)
-        search_frame.pack(side="left", padx=(10, 5), pady=5)
-        
-        ctk.CTkLabel(search_frame, text="🔍 搜尋:", font=ctk.CTkFont(size=12)).pack(side="left", padx=(5, 2), pady=5)
-        
-        self.search_entry = ctk.CTkEntry(
-            search_frame, 
-            width=200, 
-            placeholder_text="輸入怪物名稱..."
-        )
-        self.search_entry.pack(side="left", padx=(2, 5), pady=5)
-        self.search_entry.bind('<KeyRelease>', self.filter_monsters)
-        
-        # 全選/全不選按鈕
-        button_frame = ctk.CTkFrame(control_frame)
-        button_frame.pack(side="right", padx=(5, 10), pady=5)
-        
-        select_all_btn = ctk.CTkButton(
-            button_frame,
-            text="全選",
-            width=60,
-            height=25,
-            font=ctk.CTkFont(size=10),
-            command=lambda: self.toggle_all_monsters(True)
-        )
-        select_all_btn.pack(side="left", padx=2)
-        
-        select_none_btn = ctk.CTkButton(
-            button_frame,
-            text="全不選", 
-            width=60,
-            height=25,
-            font=ctk.CTkFont(size=10),
-            command=lambda: self.toggle_all_monsters(False)
-        )
-        select_none_btn.pack(side="left", padx=2)
-        
-        clear_search_btn = ctk.CTkButton(
-            button_frame,
-            text="清除搜尋",
-            width=80,
-            height=25,
-            font=ctk.CTkFont(size=10),
-            command=self.clear_search
-        )
-        clear_search_btn.pack(side="left", padx=2)
-        
-        # 滾動式怪物選擇區域
-        scroll_frame = ctk.CTkScrollableFrame(
-            container_frame, 
-            height=300,  # 設置固定高度以啟用滾動
-            label_text="選擇要啟用的怪物類型："
-        )
-        scroll_frame.pack(fill="x", padx=10, pady=(5, 10))
-        
-        # 存儲複選框和框架
-        self.monster_checkboxes = {}
-        self.monster_frames = {}
-        self.all_monsters = monster_display_names
-        
-        # 創建所有怪物複選框
-        for monster_key, display_name in monster_display_names.items():
-            # 為每個怪物創建一個框架
-            monster_frame = ctk.CTkFrame(scroll_frame)
-            monster_frame.pack(fill="x", padx=5, pady=2)
-            
-            checkbox = ctk.CTkCheckBox(
-                monster_frame,
-                text=display_name,
-                font=ctk.CTkFont(size=11),
-                width=300
-            )
-            checkbox.pack(side="left", padx=10, pady=5)
-            
-            self.monster_checkboxes[monster_key] = checkbox
-            self.monster_frames[monster_key] = monster_frame
-        
-        return self.monster_checkboxes
-    
-    def filter_monsters(self, event=None):
-        """根據搜尋內容過濾顯示怪物"""
-        search_text = self.search_entry.get().lower()
-        
-        for monster_key, monster_frame in self.monster_frames.items():
-            display_name = self.all_monsters[monster_key].lower()
-            
-            # 檢查搜尋文字是否在怪物名稱中
-            if search_text in display_name or search_text in monster_key.lower():
-                monster_frame.pack(fill="x", padx=5, pady=2)
-            else:
-                monster_frame.pack_forget()
-    
-    def clear_search(self):
-        """清除搜尋並顯示所有怪物"""
-        self.search_entry.delete(0, tk.END)
-        
-        # 顯示所有怪物
-        for monster_frame in self.monster_frames.values():
-            monster_frame.pack(fill="x", padx=5, pady=2)
-    
-    def toggle_all_monsters(self, select_all: bool):
-        """全選或全不選怪物 - 只對當前顯示的怪物生效"""
-        for monster_key, checkbox in self.monster_checkboxes.items():
-            # 只對當前顯示的怪物進行操作
-            if self.monster_frames[monster_key].winfo_viewable():
-                if select_all:
-                    checkbox.select()
-                else:
-                    checkbox.deselect()
+        return entry
     
     def load_current_config(self):
         """載入當前配置值到控件"""
@@ -577,15 +803,16 @@ class ConfigPanel:
         config_type = config_types.get(config_key, 'str')
         
         try:
-            if config_type == 'bool':
+            if config_key == 'ENABLED_MONSTERS':
+                # 特殊處理怪物選擇
+                self.set_monster_selection_value(value)
+            elif config_type == 'bool':
                 if value:
                     widget.select()
                 else:
                     widget.deselect()
-            
             elif config_type == 'choice':
                 widget.set(str(value))
-            
             elif config_type in ['int', 'float', 'str']:
                 if isinstance(widget, dict):  # 複合控件
                     widget['entry'].delete(0, tk.END)
@@ -593,23 +820,25 @@ class ConfigPanel:
                 else:
                     widget.delete(0, tk.END)
                     widget.insert(0, str(value))
-            
             elif config_type == 'list':
-                if config_key == 'ENABLED_MONSTERS' and isinstance(widget, dict):
-                    # 怪物選擇控件
-                    for monster, checkbox in widget.items():
-                        if monster in value:
-                            checkbox.select()
-                        else:
-                            checkbox.deselect()
-                else:
-                    # 其他列表類型
-                    if isinstance(value, list):
-                        widget.delete(0, tk.END)
-                        widget.insert(0, ', '.join(map(str, value)))
+                if isinstance(value, list):
+                    widget.delete(0, tk.END)
+                    widget.insert(0, ', '.join(map(str, value)))
         
         except Exception as e:
             print(f"設置控件值失敗 {config_key}: {e}")
+    
+    def set_monster_selection_value(self, value):
+        """設置怪物選擇值"""
+        if not isinstance(value, list):
+            return
+        
+        # 設置已下載怪物的選中狀態
+        for folder_name, checkbox_data in self.downloaded_monster_checkboxes.items():
+            if folder_name in value:
+                checkbox_data['var'].set(True)
+            else:
+                checkbox_data['var'].set(False)
     
     def get_widget_value(self, config_key: str, widget):
         """獲取控件值"""
@@ -617,51 +846,51 @@ class ConfigPanel:
         config_type = config_types.get(config_key, 'str')
         
         try:
-            if config_type == 'bool':
+            if config_key == 'ENABLED_MONSTERS':
+                # 特殊處理怪物選擇
+                return self.get_monster_selection_value()
+            elif config_type == 'bool':
                 return widget.get()
-            
             elif config_type == 'choice':
                 return widget.get()
-            
             elif config_type == 'int':
                 if isinstance(widget, dict):
                     return int(widget['entry'].get())
                 else:
                     return int(widget.get())
-            
             elif config_type == 'float':
                 if isinstance(widget, dict):
                     return float(widget['entry'].get())
                 else:
                     return float(widget.get())
-            
             elif config_type == 'str':
                 if isinstance(widget, dict):
                     return widget['entry'].get()
                 else:
                     return widget.get()
-            
             elif config_type == 'list':
-                if config_key == 'ENABLED_MONSTERS' and isinstance(widget, dict):
-                    # 怪物選擇控件
-                    selected = []
-                    for monster, checkbox in widget.items():
-                        if checkbox.get():
-                            selected.append(monster)
-                    return selected
+                text = widget.get().strip()
+                if text:
+                    return [item.strip() for item in text.split(',')]
                 else:
-                    # 其他列表類型
-                    text = widget.get().strip()
-                    if text:
-                        return [item.strip() for item in text.split(',')]
-                    else:
-                        return []
+                    return []
             
             return None
         
         except Exception as e:
             print(f"獲取控件值失敗 {config_key}: {e}")
             return None
+    
+    def get_monster_selection_value(self):
+        """獲取怪物選擇值"""
+        selected = []
+        
+        # 從已下載怪物中獲取選中的
+        for folder_name, checkbox_data in self.downloaded_monster_checkboxes.items():
+            if checkbox_data['var'].get():
+                selected.append(folder_name)
+        
+        return selected
     
     def collect_current_values(self) -> Dict[str, Any]:
         """收集當前所有控件的值"""
