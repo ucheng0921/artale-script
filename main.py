@@ -141,6 +141,18 @@ def load_templates():
             templates['red'] = None
         else:
             print(f"載入紅點模板: red.png")
+            
+            # ★★★ 新增：檢查並載入額外模板 ★★★
+            try:
+                from config import ENABLE_MULTI_RED_DOT
+                if ENABLE_MULTI_RED_DOT:
+                    base_dir = os.path.dirname(RED_DOT_PATH)
+                    for i in range(1, 5):
+                        extra_path = os.path.join(base_dir, f'red{i}.png')
+                        if os.path.exists(extra_path):
+                            print(f"載入額外紅點模板: red{i}.png")
+            except ImportError:
+                print("使用單一紅點模板模式")
     else:
         templates['red'] = None
 
@@ -300,27 +312,6 @@ def main_loop(window_info, templates, components):
     while True:
         current_time = time.time()
         loop_count += 1
-        
-        # ============================================================================
-        # 安全檢查 - 定期驗證認證狀態
-        # ============================================================================
-        
-        # 每5分鐘檢查一次認證
-        if current_time - last_auth_check > auth_check_interval:
-            if not auth_manager.is_authenticated():
-                print("\n" + "="*60)
-                print("❌ 會話已過期，自動停止腳本執行")
-                print("💡 請重新通過 GUI 登入以繼續使用")
-                print("="*60)
-                break
-            last_auth_check = current_time
-            print("✅ 認證狀態檢查通過")
-        
-        # 每1000次循環額外檢查一次（雙重保險）
-        if loop_count % 1000 == 0:
-            if not auth_manager.is_authenticated():
-                print("❌ 循環中認證檢查失敗，停止執行")
-                break
         
         # ============================================================================
         # 主循環邏輯

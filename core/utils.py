@@ -30,20 +30,28 @@ def simple_find_medal(screenshot, template, threshold):
     
     # ★★★ 關鍵修改：只搜索下半畫面 ★★★
     height = screenshot.shape[0]
-    half_height = height // 2
     
-    # 裁剪為下半畫面
-    lower_half = screenshot[half_height:, :]
+    # 調整這個數值來改變搜索範圍：
+    # 0.5 = 下50% (下半畫面)
+    # 0.6 = 下60% 
+    # 0.7 = 下70%
+    # 0.8 = 下80%
+    search_ratio = 0.99  # ★★★ 改這個數值 ★★★
     
-    # 在下半畫面進行模板匹配
-    result = cv2.matchTemplate(lower_half, template, cv2.TM_CCOEFF_NORMED)
+    start_y = int(height * (1 - search_ratio))
+    
+    # 裁剪為指定範圍
+    lower_region = screenshot[start_y:, :]
+    
+    # 在指定區域進行模板匹配
+    result = cv2.matchTemplate(lower_region, template, cv2.TM_CCOEFF_NORMED)
     _, max_val, _, max_loc = cv2.minMaxLoc(result)
     
     found = max_val >= threshold
     
     if found:
         # ★★★ 重要：調整座標到完整畫面的位置 ★★★
-        actual_loc = (max_loc[0], max_loc[1] + half_height)
+        actual_loc = (max_loc[0], max_loc[1] + start_y)
         return found, actual_loc, max_val
     else:
         return found, max_loc, max_val
@@ -278,7 +286,7 @@ def quick_attack_monster(monster_x, monster_y, player_x, player_y, movement, cli
     cliff_detection.last_check_time = time.time()
     
     print(f"✅ 攻擊完成: {movement.direction}({movement.current_movement_type})")
-    time.sleep(0.1) # 攻擊斷點
+    # time.sleep(0.1) # 攻擊斷點
 
 def attack_monster_with_category(monster_x, monster_y, player_x, player_y, movement, cliff_detection, monster_category):
     """★★★ 修復版分類攻擊函數 ★★★"""

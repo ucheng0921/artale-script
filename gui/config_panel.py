@@ -437,6 +437,7 @@ class ConfigPanel:
             'monster6': '石巨人系列',
             'monster7': '月妙',
             'monster8': '青龍',
+            'grupin': '獨角獅',
         }
         
         # 創建容器框架

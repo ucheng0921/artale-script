@@ -1,5 +1,5 @@
 """
-整合版主視窗類 - 包含 Firebase 認證功能和單一會話限制 (簡化界面版)
+整合版主視窗類 - 包含 Firebase 認證功能、單一會話限制和怪物下載器 (簡化界面版)
 """
 import customtkinter as ctk
 import tkinter as tk
@@ -45,8 +45,8 @@ class MainWindow:
     def setup_window(self):
         """設置主視窗屬性"""
         self.root.title("Artale Script GUI v1.1")
-        self.root.geometry("1000x700")
-        self.root.minsize(800, 600)
+        self.root.geometry("1200x800")  # 增加寬度以容納新功能
+        self.root.minsize(1000, 700)
         
         # 設置關閉事件
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -368,6 +368,10 @@ class MainWindow:
         self.settings_tab = self.tabview.add("⚙️ 進階設定")
         self.create_settings_section(self.settings_tab)
         
+        # 怪物下載器選項卡
+        self.monster_tab = self.tabview.add("🎨 怪物下載器")
+        self.create_monster_downloader_section(self.monster_tab)
+        
         # 會話管理選項卡（僅登入後顯示）
         if self.logged_in.get():
             self.session_tab = self.tabview.add("🔗 會話管理")
@@ -465,6 +469,26 @@ class MainWindow:
                 font=ctk.CTkFont(size=12)
             )
             info_label.pack(expand=True)
+    
+    def create_monster_downloader_section(self, parent):
+        """創建怪物下載器區域"""
+        try:
+            # 導入怪物下載器面板
+            from .monster_downloader import MonsterDownloaderPanel
+            
+            # 創建怪物下載器面板
+            self.monster_downloader_panel = MonsterDownloaderPanel(parent, self.config_manager)
+            self.log("✅ 怪物下載器面板創建完成")
+            
+        except Exception as e:
+            self.log(f"❌ 怪物下載器面板創建失敗: {str(e)}")
+            error_label = ctk.CTkLabel(
+                parent, 
+                text=f"怪物下載器載入失敗:\n{str(e)}\n\n請檢查網路連接和相關依賴",
+                font=ctk.CTkFont(size=12),
+                text_color="red"
+            )
+            error_label.pack(expand=True)
     
     def create_session_section(self, parent):
         """創建會話管理區域"""
@@ -1004,6 +1028,7 @@ class MainWindow:
         
         self.log("💡 提示: 只有授權用戶才能使用腳本功能")
         self.log("🎯 登入後確保遊戲視窗已開啟，然後點擊開始腳本")
+        self.log("🎨 怪物下載器功能現已整合，可在對應選項卡中使用")
         
         # 如果配置管理器初始化失敗，提示用戶
         if not self.config_manager:

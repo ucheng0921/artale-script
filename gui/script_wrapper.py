@@ -293,13 +293,6 @@ class ScriptWrapper:
                 # 處理GUI命令
                 self._process_commands()
                 
-                # 定期認證檢查
-                if current_time - last_auth_check > auth_check_interval:
-                    if not auth_manager.is_authenticated():
-                        self._send_log("❌ 會話已過期，自動停止腳本執行")
-                        break
-                    last_auth_check = current_time
-                
                 # 更新統計
                 if loop_count % 100 == 0:
                     self._update_script_stats()

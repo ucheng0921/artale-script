@@ -213,8 +213,8 @@ class RuneMode:
         from core.utils import capture_screen, simple_find_medal, execute_channel_change
         from config import MATCH_THRESHOLD, Y_OFFSET, RUNE_HEIGHT_THRESHOLD
         
-        if time.time() - self.start_time > 200:
-            print("在 Rune 模式下超過200秒未找到 rune_text，執行 esc")
+        if time.time() - self.start_time > 60:
+            print("在 Rune 模式下超過60秒未找到 rune_text，執行 esc")
             # 執行換頻道流程
             execute_channel_change(client_rect, change_templates)
             self.exit()
